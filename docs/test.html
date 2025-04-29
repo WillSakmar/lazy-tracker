@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Dashboard Data Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Data Loading Test</h1>
+        <div id="status" class="alert alert-info">Testing data loading...</div>
+        <div id="results" class="mt-4"></div>
+    </div>
+
+    <script>
+        async function testDataLoading() {
+            const status = document.getElementById('status');
+            const results = document.getElementById('results');
+            let html = '<h2>Test Results:</h2><ul>';
+
+            try {
+                // Test loading each data file
+                const files = [
+                    './data/portfolio.json',
+                    './data/benchmarks.json',
+                    './data/metrics.json',
+                    './data/monthly_returns.json',
+                    './data/config.json'
+                ];
+
+                for (const file of files) {
+                    try {
+                        const response = await fetch(file);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        const data = await response.json();
+                        const size = new Blob([JSON.stringify(data)]).size;
+                        html += `<li class="text-success">${file} - Loaded successfully (${Math.round(size/1024)} KB)</li>`;
+                    } catch (error) {
+                        html += `<li class="text-danger">${file} - Failed to load: ${error.message}</li>`;
+                    }
+                }
+
+                html += '</ul>';
+                results.innerHTML = html;
+                status.className = 'alert alert-success';
+                status.textContent = 'Testing completed';
+            } catch (error) {
+                status.className = 'alert alert-danger';
+                status.textContent = 'Error during testing: ' + error.message;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', testDataLoading);
+    </script>
+</body>
+</html> 
