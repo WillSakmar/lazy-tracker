@@ -21,10 +21,20 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def pd_to_json(df):
     """Convert pandas dataframes to JSON with ISO date format"""
     if isinstance(df, pd.DataFrame):
+        # For DataFrames with DatetimeIndex
         if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            df['date'] = df['date'].dt.strftime('%Y-%m-%d')
-        return json.loads(df.to_json(orient='records', date_format='iso'))
+            # Create a copy to avoid modifying the original dataframe
+            df_copy = df.copy()
+            df_copy.index.name = df_copy.index.name or 'date'
+            df_copy = df_copy.reset_index()
+            # Ensure date column is formatted as string
+            date_col = df_copy.index.name or 'date'
+            if date_col in df_copy.columns and pd.api.types.is_datetime64_any_dtype(df_copy[date_col]):
+                df_copy[date_col] = df_copy[date_col].dt.strftime('%Y-%m-%d')
+            return json.loads(df_copy.to_json(orient='records', date_format='iso'))
+        else:
+            # For DataFrames without DatetimeIndex
+            return json.loads(df.to_json(orient='records', date_format='iso'))
     elif isinstance(df, pd.Series):
         if isinstance(df.index, pd.DatetimeIndex):
             return {date.strftime('%Y-%m-%d'): value for date, value in df.items()}
