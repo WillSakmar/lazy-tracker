@@ -3,13 +3,37 @@
 // Load all data files
 async function loadData() {
     try {
+        console.log('Loading data files...');
         const [portfolio, benchmarks, metrics, monthlyReturns, config] = await Promise.all([
-            fetch('./data/portfolio.json').then(res => res.json()),
-            fetch('./data/benchmarks.json').then(res => res.json()),
-            fetch('./data/metrics.json').then(res => res.json()),
-            fetch('./data/monthly_returns.json').then(res => res.json()),
-            fetch('./data/config.json').then(res => res.json())
+            fetch('./data/portfolio.json').then(res => {
+                if (!res.ok) throw new Error(`Failed to load portfolio data: ${res.status}`);
+                return res.json();
+            }),
+            fetch('./data/benchmarks.json').then(res => {
+                if (!res.ok) throw new Error(`Failed to load benchmarks data: ${res.status}`);
+                return res.json();
+            }),
+            fetch('./data/metrics.json').then(res => {
+                if (!res.ok) throw new Error(`Failed to load metrics data: ${res.status}`);
+                return res.json();
+            }),
+            fetch('./data/monthly_returns.json').then(res => {
+                if (!res.ok) throw new Error(`Failed to load monthly returns data: ${res.status}`);
+                return res.json();
+            }),
+            fetch('./data/config.json').then(res => {
+                if (!res.ok) throw new Error(`Failed to load config data: ${res.status}`);
+                return res.json();
+            })
         ]);
+        
+        console.log('Data loaded successfully:', { 
+            portfolio: portfolio.length, 
+            benchmarks: benchmarks.length,
+            metrics: Object.keys(metrics),
+            monthlyReturns: Object.keys(monthlyReturns).length,
+            config: config
+        });
         
         return { portfolio, benchmarks, metrics, monthlyReturns, config };
     } catch (error) {
@@ -18,7 +42,7 @@ async function loadData() {
             <div class="container mt-5 text-center">
                 <div class="alert alert-danger">
                     <h3>Error Loading Data</h3>
-                    <p>Could not load portfolio data. Please try again later.</p>
+                    <p>Could not load portfolio data. Please try again later or check the console for details.</p>
                     <p>Error: ${error.message}</p>
                 </div>
             </div>
@@ -42,120 +66,145 @@ function formatCurrency(value, decimals = 2) {
 
 // Generate portfolio performance chart
 function renderPortfolioChart(portfolio, benchmarks) {
-    const ctx = document.getElementById('portfolioChart').getContext('2d');
-    
-    // Extract dates and values
-    const dates = portfolio.map(d => d.date);
-    const portfolioValues = portfolio.map(d => d.total);
-    
-    // Create datasets array with portfolio data
-    const datasets = [{
-        label: 'Portfolio',
-        data: portfolioValues,
-        borderColor: 'rgb(54, 162, 235)',
-        backgroundColor: 'rgba(54, 162, 235, 0.1)',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.1
-    }];
-    
-    // Add benchmark datasets if available
-    if (benchmarks && benchmarks.length > 0) {
-        // Normalize benchmark data to match portfolio starting value
-        const startingValue = portfolioValues[0];
+    try {
+        const ctx = document.getElementById('portfolioChart').getContext('2d');
         
-        if (benchmarks.some(b => b["^GSPC"])) {
-            const spValues = benchmarks.map(b => b["^GSPC"] * startingValue / 100);
-            datasets.push({
-                label: 'S&P 500',
-                data: spValues,
-                borderColor: 'rgb(255, 99, 132)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                fill: false,
-                tension: 0.1
-            });
+        // Extract dates and values
+        const dates = portfolio.map(d => d.date);
+        const portfolioValues = portfolio.map(d => d.total);
+        
+        console.log('Portfolio data sample:', {
+            dates: dates.slice(0, 3),
+            values: portfolioValues.slice(0, 3)
+        });
+        
+        // Create datasets array with portfolio data
+        const datasets = [{
+            label: 'Portfolio',
+            data: portfolioValues,
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.1
+        }];
+        
+        // Add benchmark datasets if available
+        if (benchmarks && benchmarks.length > 0) {
+            // Normalize benchmark data to match portfolio starting value
+            const startingValue = portfolioValues[0];
+            
+            if (benchmarks.some(b => b["^GSPC"])) {
+                const spValues = benchmarks.map(b => b["^GSPC"] * startingValue / 100);
+                datasets.push({
+                    label: 'S&P 500',
+                    data: spValues,
+                    borderColor: 'rgb(255, 99, 132)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.1
+                });
+            }
+            
+            if (benchmarks.some(b => b["BND"])) {
+                const bondValues = benchmarks.map(b => b["BND"] * startingValue / 100);
+                datasets.push({
+                    label: 'Bonds',
+                    data: bondValues,
+                    borderColor: 'rgb(75, 192, 192)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.1
+                });
+            }
+            
+            if (benchmarks.some(b => b["60/40"])) {
+                const blendValues = benchmarks.map(b => b["60/40"] * startingValue / 100);
+                datasets.push({
+                    label: '60/40 Blend',
+                    data: blendValues,
+                    borderColor: 'rgb(153, 102, 255)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.1
+                });
+            }
         }
         
-        if (benchmarks.some(b => b["BND"])) {
-            const bondValues = benchmarks.map(b => b["BND"] * startingValue / 100);
-            datasets.push({
-                label: 'Bonds',
-                data: bondValues,
-                borderColor: 'rgb(75, 192, 192)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                fill: false,
-                tension: 0.1
-            });
-        }
+        // Parse dates properly
+        const parsedDates = dates.map(d => {
+            // If date is already a Date object, return it
+            if (d instanceof Date) return d;
+            // If date is a string, parse it
+            try {
+                return new Date(d);
+            } catch (e) {
+                console.error("Error parsing date:", d, e);
+                return new Date(); // fallback
+            }
+        });
         
-        if (benchmarks.some(b => b["60/40"])) {
-            const blendValues = benchmarks.map(b => b["60/40"] * startingValue / 100);
-            datasets.push({
-                label: '60/40 Blend',
-                data: blendValues,
-                borderColor: 'rgb(153, 102, 255)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                fill: false,
-                tension: 0.1
-            });
-        }
-    }
-    
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: dates,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            interaction: {
-                mode: 'index',
-                intersect: false,
+        // Create the chart
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: parsedDates,
+                datasets: datasets
             },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': ' + formatCurrency(context.raw);
-                        }
-                    }
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
                 },
-                legend: {
-                    position: 'top',
-                }
-            },
-            scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'month',
-                        displayFormats: {
-                            month: 'MMM yyyy'
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + formatCurrency(context.raw);
+                            }
                         }
                     },
-                    title: {
-                        display: true,
-                        text: 'Date'
+                    legend: {
+                        position: 'top',
                     }
                 },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Value ($)'
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'month',
+                            displayFormats: {
+                                month: 'MMM yyyy'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
                     },
-                    ticks: {
-                        callback: function(value) {
-                            return formatCurrency(value, 0);
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Value ($)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value, 0);
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
+    } catch (error) {
+        console.error('Error rendering portfolio chart:', error);
+        document.getElementById('portfolioChart').innerHTML = 
+            `<div class="alert alert-danger">Error rendering chart: ${error.message}</div>`;
+    }
 }
 
 // Generate asset allocation chart
@@ -383,14 +432,37 @@ function renderPortfolioInfo(config) {
 
 // Initialize the dashboard on page load
 async function initDashboard() {
-    const data = await loadData();
-    if (!data) return;
-    
-    renderPortfolioChart(data.portfolio, data.benchmarks);
-    renderAllocationChart(data.portfolio, data.config);
-    renderMetrics(data.metrics);
-    renderMonthlyReturns(data.monthlyReturns);
-    renderPortfolioInfo(data.config);
+    try {
+        console.log('Initializing dashboard...');
+        const data = await loadData();
+        if (!data) return;
+        
+        console.log('Rendering dashboard components...');
+        renderPortfolioChart(data.portfolio, data.benchmarks);
+        renderAllocationChart(data.portfolio, data.config);
+        renderMetrics(data.metrics);
+        renderMonthlyReturns(data.monthlyReturns);
+        renderPortfolioInfo(data.config);
+        
+        // Set last updated timestamp
+        const lastUpdated = document.getElementById('lastUpdated');
+        if (lastUpdated) {
+            lastUpdated.textContent = data.config.last_updated || new Date().toLocaleString();
+        }
+        
+        console.log('Dashboard initialization complete');
+    } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        document.body.innerHTML = `
+            <div class="container mt-5 text-center">
+                <div class="alert alert-danger">
+                    <h3>Error Initializing Dashboard</h3>
+                    <p>An error occurred while setting up the dashboard. Please check the console for details.</p>
+                    <p>Error: ${error.message}</p>
+                </div>
+            </div>
+        `;
+    }
 }
 
 // Start the dashboard
