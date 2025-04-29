@@ -1,0 +1,1 @@
+{"tickers": ["VTI", "BND"], "weights": {"VTI": 0.6, "BND": 0.4}, "rebalance_period": "Q", "initial_investment": 100000, "start_date": "2015-05-02", "end_date": "2025-04-29", "last_updated": "2025-04-29 13:45:29"}
