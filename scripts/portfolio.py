@@ -17,15 +17,36 @@ def simulate_portfolio(prices, weights, initial_cash=100_000, rebalance_period="
     - prices: DataFrame of adjusted close prices
     - weights: Dict of ticker to target weights
     - initial_cash: Starting cash amount
-    - rebalance_period: Rebalancing frequency (M=monthly, Q=quarterly, A=annually)
+    - rebalance_period: Rebalancing frequency (M=monthly, QE=quarterly, A=annually)
     
     Returns:
     - DataFrame with portfolio values over time
     """
+    # Ensure index is DatetimeIndex
+    if not isinstance(prices.index, pd.DatetimeIndex):
+        try:
+            prices.index = pd.to_datetime(prices.index)
+        except Exception as e:
+            raise ValueError(f"Failed to convert index to DatetimeIndex: {str(e)}")
+    
     dates = prices.index
-    rebal_dates = prices.resample(rebalance_period).last().index
+    
+    # Update deprecated 'Q' to 'QE' if needed
+    if rebalance_period == "Q":
+        rebalance_period = "QE"
+        
+    # Get rebalance dates
+    try:
+        rebal_dates = prices.resample(rebalance_period).last().index
+    except Exception as e:
+        raise ValueError(f"Failed to resample with period {rebalance_period}: {str(e)}")
 
     cash = initial_cash
+    
+    # Check if prices contains data
+    if len(prices) == 0:
+        raise ValueError("Empty price data. Cannot initialize portfolio.")
+    
     shares, leftover = initialize_portfolio(cash, prices.iloc[0], weights)
     records = []
 

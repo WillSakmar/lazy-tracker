@@ -120,30 +120,57 @@ def main():
         return
     
     # Get the price data
-    prices = fetch_price_data(
-        tickers,
-        start,
-        end + timedelta(days=1),
-        use_cache=not refresh_data
-    )
+    try:
+        with st.spinner("Fetching price data..."):
+            prices = fetch_price_data(
+                tickers,
+                start,
+                end + timedelta(days=1),
+                use_cache=not refresh_data
+            )
+            
+        # Check if we have enough data to proceed
+        if prices.empty:
+            st.error("No price data available. Please check your ticker symbols and try again.")
+            return
+            
+        if len(prices) < 2:
+            st.error("Insufficient price data. Need at least 2 dates for analysis.")
+            return
+            
+        # Display warnings for any missing tickers
+        missing_tickers = [t for t in tickers if t not in prices.columns]
+        if missing_tickers:
+            st.warning(f"Data for {', '.join(missing_tickers)} could not be fetched. Analysis will continue with available data.")
+        
+    except Exception as e:
+        st.error(f"Error fetching price data: {str(e)}")
+        st.info("Please try again later or use different tickers.")
+        return
     
     # Simulate the portfolio
-    if rebalance_period == "N":
-        # If no rebalancing, use a very long period that won't trigger
-        rebal_period = "100Y"
-    else:
-        rebal_period = rebalance_period
-        
-    perf = simulate_portfolio(
-        prices, 
-        weights, 
-        initial_cash=initial_cash, 
-        rebalance_period=rebal_period
-    )
-    
-    # Calculate portfolio returns and metrics
-    returns = calculate_returns(perf)
-    metrics = calculate_metrics(returns)
+    try:
+        if rebalance_period == "N":
+            # If no rebalancing, use a very long period that won't trigger
+            rebal_period = "100Y"
+        else:
+            rebal_period = rebalance_period
+            
+        with st.spinner("Simulating portfolio..."):
+            perf = simulate_portfolio(
+                prices, 
+                weights, 
+                initial_cash=initial_cash, 
+                rebalance_period=rebal_period
+            )
+            
+        # Calculate portfolio returns and metrics
+        returns = calculate_returns(perf)
+        metrics = calculate_metrics(returns)
+    except Exception as e:
+        st.error(f"Error in portfolio simulation: {str(e)}")
+        st.info("Please try adjusting your settings or using different tickers.")
+        return
     
     # Main dashboard content
     col1, col2 = st.columns([2, 1])
@@ -160,22 +187,27 @@ def main():
         
         # Add benchmarks if requested
         if show_benchmark:
-            bench_data = fetch_benchmark_data(start, end + timedelta(days=1))
-            
-            # Normalize benchmark to portfolio starting value
-            initial_port_value = perf['total'].iloc[0]
-            for col in bench_data.columns:
-                bench_data[col] = bench_data[col] * initial_port_value / 100
+            try:
+                bench_data = fetch_benchmark_data(start, end + timedelta(days=1))
                 
-                # Add to chart
-                fig_value.add_trace(
-                    go.Scatter(
-                        x=bench_data.index, 
-                        y=bench_data[col],
-                        name=col,
-                        line=dict(dash='dash')
-                    )
-                )
+                # Only proceed if we have benchmark data
+                if not bench_data.empty and len(bench_data) > 0:
+                    # Normalize benchmark to portfolio starting value
+                    initial_port_value = perf['total'].iloc[0]
+                    for col in bench_data.columns:
+                        bench_data[col] = bench_data[col] * initial_port_value / 100
+                        
+                        # Add to chart
+                        fig_value.add_trace(
+                            go.Scatter(
+                                x=bench_data.index, 
+                                y=bench_data[col],
+                                name=col,
+                                line=dict(dash='dash')
+                            )
+                        )
+            except Exception as e:
+                st.warning(f"Could not load benchmark data: {str(e)}")
                 
         st.plotly_chart(fig_value, use_container_width=True)
         
@@ -322,11 +354,11 @@ def main():
     with col2:
         # Export monthly returns
         csv_returns = pivot.to_csv().encode("utf-8")
-        st.download_button(
+    st.download_button(
             label="📥 Download Monthly Returns CSV",
             data=csv_returns,
             file_name=f"monthly_returns_{start.strftime('%Y%m%d')}_to_{end.strftime('%Y%m%d')}.csv",
-            mime="text/csv"
+        mime="text/csv"
         )
     
     # Disclaimer
