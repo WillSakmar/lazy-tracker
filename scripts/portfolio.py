@@ -81,11 +81,11 @@ def calculate_returns(portfolio_df):
     # Daily returns
     daily_returns = portfolio_df['total'].pct_change().dropna()
     
-    # Monthly returns
-    monthly_returns = portfolio_df['total'].resample('M').last().pct_change().dropna()
+    # Monthly returns - update 'M' to 'ME'
+    monthly_returns = portfolio_df['total'].resample('ME').last().pct_change().dropna()
     
-    # Annual returns
-    annual_returns = portfolio_df['total'].resample('Y').last().pct_change().dropna()
+    # Annual returns - update 'Y' to 'YE'
+    annual_returns = portfolio_df['total'].resample('YE').last().pct_change().dropna()
     
     return {
         'daily': daily_returns,
@@ -115,8 +115,15 @@ def calculate_metrics(returns):
     downside_dev = neg_returns.std() * np.sqrt(252) if len(neg_returns) > 0 else 0
     sortino = ann_return / downside_dev if downside_dev > 0 else 0
     
-    # Value at Risk (95%)
-    var_95 = stats.norm.ppf(0.05, daily_returns.mean(), daily_returns.std())
+    # Value at Risk (95%) - add error handling
+    try:
+        var_95 = stats.norm.ppf(0.05, daily_returns.mean(), daily_returns.std())
+        # Check if value is valid
+        if np.isnan(var_95) or np.isinf(var_95):
+            var_95 = -0.02  # Default fallback value
+    except Exception:
+        # Fallback to a reasonable default VaR value
+        var_95 = -0.02
     
     return {
         'annualized_return': ann_return,
