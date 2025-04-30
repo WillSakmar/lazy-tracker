@@ -220,20 +220,30 @@ def main():
                     fig_value.data[-1].line.color = color
         
         # Improve the legend and layout
-        fig_value.update_layout(
-            legend_orientation="h",
-            legend_y=1.02,
-            legend_x=1,
-            legend_xanchor="right",
-            legend_yanchor="bottom",
-            xaxis_title="Date",
-            xaxis_showgrid=True,
-            xaxis_gridcolor='rgba(230, 230, 230, 0.5)',
-            yaxis_title="Value ($)",
-            yaxis_showgrid=True,
-            yaxis_gridcolor='rgba(230, 230, 230, 0.5)',
-            plot_bgcolor='white',
-            hovermode='x unified'
+        # Use a much simpler approach to layout configuration
+        fig_value.layout.plot_bgcolor = 'white'
+        fig_value.layout.hovermode = 'x unified'
+        
+        # Configure legend
+        fig_value.layout.legend = dict(
+            orientation="h",
+            y=1.02,
+            x=1,
+            xanchor="right",
+            yanchor="bottom"
+        )
+        
+        # Configure axes
+        fig_value.layout.xaxis = dict(
+            title="Date",
+            showgrid=True,
+            gridcolor='rgba(230, 230, 230, 0.5)'
+        )
+        
+        fig_value.layout.yaxis = dict(
+            title="Value ($)",
+            showgrid=True,
+            gridcolor='rgba(230, 230, 230, 0.5)'
         )
         
         st.plotly_chart(fig_value, use_container_width=True)
@@ -247,6 +257,20 @@ def main():
                 labels={"max_weight_deviation": "Max Weight Deviation", "date": "Date"},
                 title=f"Maximum Deviation from Target Weights (Rebalanced {rebalance_options[rebalance_period]})"
             )
+            
+            # Configure layout using the same approach as fig_value
+            fig_deviation.layout.plot_bgcolor = 'white'
+            fig_deviation.layout.xaxis = dict(
+                title="Date",
+                showgrid=True,
+                gridcolor='rgba(230, 230, 230, 0.5)'
+            )
+            fig_deviation.layout.yaxis = dict(
+                title="Max Weight Deviation",
+                showgrid=True,
+                gridcolor='rgba(230, 230, 230, 0.5)'
+            )
+            
             st.plotly_chart(fig_deviation, use_container_width=True)
     
     with col2:
