@@ -229,14 +229,18 @@ def main():
                 x=1
             ),
             xaxis=dict(
-                title="Date",
-                titlefont=dict(size=12),
+                title=dict(
+                    text="Date",
+                    font=dict(size=12)
+                ),
                 showgrid=True,
                 gridcolor='rgba(230, 230, 230, 0.5)'
             ),
             yaxis=dict(
-                title="Value ($)",
-                titlefont=dict(size=12),
+                title=dict(
+                    text="Value ($)",
+                    font=dict(size=12)
+                ),
                 showgrid=True,
                 gridcolor='rgba(230, 230, 230, 0.5)'
             ),
