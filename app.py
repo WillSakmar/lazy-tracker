@@ -176,22 +176,51 @@ def main():
         # Value over time chart
         st.subheader("Portfolio Value")
         
-        # Create a figure with multiple lines - one for total and one for each holding
+        # Create a dataframe for plotting with a nicer name for total
+        plot_df = perf.copy()
+        plot_df = plot_df.rename(columns={"total": "Portfolio Total"})
+        
+        # Define a color palette for better distinction between lines
+        colors = {
+            "Portfolio Total": "rgb(54, 162, 235)",  # Blue for portfolio total
+            # Define distinct colors for common asset types
+            "VTI": "rgb(255, 99, 132)",    # Red
+            "BND": "rgb(75, 192, 192)",    # Green
+            "VEA": "rgb(153, 102, 255)",   # Purple
+            "VWO": "rgb(255, 159, 64)",    # Orange
+            "VTEB": "rgb(201, 203, 207)",  # Grey
+            "VXUS": "rgb(255, 205, 86)",   # Yellow
+        }
+        
+        # Create a new figure
         fig_value = px.line(
-            perf, 
-            y="total", 
-            labels={"total": "Value ($)", "date": "Date"},
+            plot_df, 
+            y="Portfolio Total",
+            labels={"value": "Value ($)", "date": "Date", "variable": "Asset"},
             title="Portfolio Value Over Time"
         )
         
-        # Add a line for each individual holding
+        # Customize the total portfolio line
+        fig_value.update_traces(
+            line=dict(width=3),  # Make portfolio line thicker
+            name="Portfolio Total"
+        )
+        
+        # Add a line for each individual holding with distinct colors
         for ticker in weights.keys():
-            if ticker in perf.columns:
+            if ticker in plot_df.columns:
+                color = colors.get(ticker, None)  # Use predefined color or auto-assign
                 fig_value.add_trace(
-                    px.line(perf, y=ticker, labels={ticker: ticker}).data[0]
+                    px.line(plot_df, y=ticker).data[0].update(
+                        name=ticker,
+                        line=dict(
+                            width=1.5,  # Thinner than the total
+                            color=color
+                        )
+                    )
                 )
         
-        # Improve the legend layout
+        # Improve the legend and layout
         fig_value.update_layout(
             legend=dict(
                 orientation="h",
@@ -199,7 +228,21 @@ def main():
                 y=1.02,
                 xanchor="right",
                 x=1
-            )
+            ),
+            xaxis=dict(
+                title="Date",
+                titlefont=dict(size=12),
+                showgrid=True,
+                gridcolor='rgba(230, 230, 230, 0.5)'
+            ),
+            yaxis=dict(
+                title="Value ($)",
+                titlefont=dict(size=12),
+                showgrid=True,
+                gridcolor='rgba(230, 230, 230, 0.5)'
+            ),
+            plot_bgcolor='white',
+            hovermode='x unified'
         )
         
         st.plotly_chart(fig_value, use_container_width=True)
