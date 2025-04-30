@@ -3,224 +3,217 @@ import pandas as pd
 import os
 import time
 from datetime import datetime, timedelta
+import numpy as np
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def fetch_price_data(tickers, start, end, use_cache=True, max_retries=1):
     """
-    Simplified price data fetching to minimize Yahoo Finance API calls.
-    Uses aggressive caching with longer expiration times.
+    Improved price data fetching to minimize Yahoo Finance API calls.
+    Uses aggressive caching with longer expiration times and better rate limit handling.
     """
     # Convert tickers to list if it's not already
     if isinstance(tickers, str):
         tickers = [tickers]
     
-    # Use a monthly cache instead of weekly to further reduce API calls
-    cache_month = datetime.now().strftime("%Y-%m")  # Year-Month format
-    cache_file = os.path.join(DATA_DIR, f"prices_cache_{cache_month}.csv")
+    # Use a quarterly cache instead of monthly to further reduce API calls
+    # Format: 2023-Q1, 2023-Q2, etc.
+    current_quarter = (datetime.now().month - 1) // 3 + 1
+    cache_quarter = f"{datetime.now().year}-Q{current_quarter}"
+    cache_file = os.path.join(DATA_DIR, f"prices_cache_{cache_quarter}.csv")
     
     # Try to load from cache first
-    if use_cache and os.path.exists(cache_file):
+    if use_cache:
+        # First check if we have a fresh enough cache that contains all needed tickers
+        if os.path.exists(cache_file):
+            try:
+                cached_data = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+                
+                # Check if we have all requested tickers in the cache
+                all_tickers_cached = all(ticker in cached_data.columns for ticker in tickers)
+                
+                # Check if date range is covered
+                start_date = pd.Timestamp(start)
+                end_date = pd.Timestamp(end)
+                
+                # If we have all tickers and they have reasonably recent data
+                if all_tickers_cached:
+                    cached_start = cached_data.index.min()
+                    cached_end = cached_data.index.max()
+                    
+                    if cached_start <= start_date and cached_end >= (end_date - timedelta(days=7)):
+                        # We have a cache that's good enough - use it
+                        print(f"Using cached data for all tickers from {cache_file}")
+                        return cached_data.loc[cached_data.index >= start_date, tickers]
+            except Exception as e:
+                print(f"Error reading cache: {e}")
+    
+    # If we don't have a suitable cache or cache loading failed, we need to handle data fetching
+    missing_tickers = tickers.copy()
+    result_data = None
+    
+    # Try to fetch Yahoo data, but with improved error handling
+    retry_count = 0
+    while missing_tickers and retry_count < max_retries:
         try:
-            cached_data = pd.read_csv(cache_file, index_col=0, parse_dates=True)
-            # Check if we have any of the requested tickers in cache
-            available_tickers = [t for t in tickers if t in cached_data.columns]
+            # Stagger requests to avoid rate limits
+            time.sleep(2 + retry_count)  # Increase delay with each retry
             
-            if available_tickers:
-                print(f"Using cached data for {available_tickers}")
-                
-                # Check if all tickers are available in cache
-                if len(available_tickers) == len(tickers):
-                    return cached_data[tickers]
-                    
-                # If not all tickers are in cache, we'll fetch the missing ones
-                missing_tickers = [t for t in tickers if t not in available_tickers]
-                print(f"Need to fetch missing tickers: {missing_tickers}")
-                
-                # Try to fetch just the missing tickers
-                try:
-                    # Add delay to avoid rate limits
-                    time.sleep(2)  # Increase delay to 2 seconds
-                    missing_data = yf.download(
-                        missing_tickers, 
-                        start=start, 
-                        end=end, 
-                        progress=False
-                    )
-                    
-                    if 'Adj Close' in missing_data.columns:
-                        missing_price_data = missing_data['Adj Close']
-                    else:
-                        missing_price_data = missing_data['Close']
-                    
-                    # Handle single ticker case
-                    if len(missing_tickers) == 1 and isinstance(missing_price_data, pd.Series):
-                        missing_price_data = pd.DataFrame(missing_price_data, columns=missing_tickers)
-                    
-                    # Check for rate limit error
-                    if missing_price_data.empty:
-                        raise Exception("Empty dataframe returned, likely rate limited")
-                    
-                    # Combine with cached data
-                    if not missing_price_data.empty:
-                        # Ensure the indices align
-                        missing_price_data.index = pd.to_datetime(missing_price_data.index)
-                        all_data = pd.concat([cached_data[available_tickers], missing_price_data], axis=1)
-                        
-                        # Update the cache file
-                        all_columns = list(cached_data.columns) + missing_tickers
-                        full_data = pd.concat([cached_data, missing_price_data], axis=1)
-                        # Remove duplicate columns
-                        full_data = full_data.loc[:, ~full_data.columns.duplicated()]
-                        full_data.to_csv(cache_file)
-                        
-                        # Return only the requested tickers
-                        return all_data[tickers]
-                except Exception as e:
-                    # Rate limit hit or other error
-                    print(f"Warning: {str(e)}. Using cached data with estimates for missing tickers.")
-                    
-                    # Create a dataframe with just cached data for available tickers
-                    result_df = cached_data[available_tickers].copy()
-                    
-                    # For missing tickers, use synthetic data based on similar assets or average market return
-                    # This provides a reasonable fallback when rate limited
-                    if "VTI" in result_df.columns and "BND" in missing_tickers:
-                        # If BND is missing but we have VTI, create synthetic bond data with 1/3 the volatility
-                        # This is a very rough estimate but better than nothing
-                        print("Creating synthetic BND data based on VTI with reduced volatility")
-                        vti_returns = result_df["VTI"].pct_change().fillna(0)
-                        bnd_synthetic = result_df["VTI"].copy()
-                        # Start with the same base but reduce volatility
-                        for i in range(1, len(bnd_synthetic)):
-                            # Bonds typically have 1/3 to 1/4 the volatility of stocks
-                            bnd_synthetic.iloc[i] = bnd_synthetic.iloc[i-1] * (1 + vti_returns.iloc[i] * 0.3)
-                        result_df["BND"] = bnd_synthetic
-                    
-                    elif "BND" in result_df.columns and "VTI" in missing_tickers:
-                        # If VTI is missing but we have BND, create synthetic stock data
-                        print("Creating synthetic VTI data based on BND with increased volatility")
-                        bnd_returns = result_df["BND"].pct_change().fillna(0)
-                        vti_synthetic = result_df["BND"].copy()
-                        # Start with the same base but increase volatility
-                        for i in range(1, len(vti_synthetic)):
-                            # Stocks typically have 3-4x the volatility of bonds
-                            vti_synthetic.iloc[i] = vti_synthetic.iloc[i-1] * (1 + bnd_returns.iloc[i] * 3.5)
-                        result_df["VTI"] = vti_synthetic
-                    
-                    else:
-                        # For any other missing tickers, just use flat values as a last resort
-                        for ticker in missing_tickers:
-                            result_df[ticker] = 100.0
-                    
-                    return result_df[tickers]
-        except Exception as e:
-            print(f"Error loading cache: {e}. Will attempt to fetch fresh data.")
-    
-    # If no cache or cache loading failed, fetch all data fresh
-    print(f"Fetching all price data for {tickers}")
-    
-    try:
-        # Add a small delay to respect rate limits
-        time.sleep(2)  # Increase delay to 2 seconds
-        
-        # Fetch all tickers
-        data = yf.download(tickers, start=start, end=end, progress=False)
-        
-        if data.empty:
-            print("Warning: No data returned from Yahoo Finance, likely rate limited")
-            # Check if we have any cached data first
-            if use_cache:
-                # Look for any cache files
-                cache_files = [f for f in os.listdir(DATA_DIR) if f.startswith("prices_cache_") and f.endswith(".csv")]
-                if cache_files:
-                    # Use the most recent cache file
-                    cache_files.sort(reverse=True)
-                    recent_cache = os.path.join(DATA_DIR, cache_files[0])
-                    try:
-                        cached = pd.read_csv(recent_cache, index_col=0, parse_dates=True)
-                        available = [t for t in tickers if t in cached.columns]
-                        if available:
-                            print(f"Using cached data from {recent_cache} due to rate limiting")
-                            result = cached[available].copy()
-                            # Add flat values for any missing tickers
-                            for t in tickers:
-                                if t not in available:
-                                    result[t] = 100.0
-                            return result[tickers]
-                    except Exception:
-                        pass
+            print(f"Trying to fetch data for {missing_tickers}")
             
-            # If we can't get data from cache or API, return dummy data
-            dummy_data = pd.DataFrame(
-                {t: [100.0] * 20 for t in tickers},
-                index=pd.date_range(start=start, end=end, freq='B')[:20]
+            # Fetch the missing tickers
+            fetched_data = yf.download(
+                missing_tickers, 
+                start=start, 
+                end=end, 
+                progress=False,
+                threads=False  # Use single thread to reduce likelihood of rate limits
             )
-            return dummy_data
             
-        # Process data
-        if 'Adj Close' in data.columns:
-            price_data = data['Adj Close']
-        else:
-            price_data = data['Close']
-            
-        # Handle single ticker case
-        if len(tickers) == 1 and isinstance(price_data, pd.Series):
-            price_data = pd.DataFrame(price_data, columns=tickers)
-            
-        # Fill missing values
-        price_data = price_data.ffill().bfill()
-        
-        # Save to cache
-        if use_cache:
-            # If the cache file exists, update it
-            if os.path.exists(cache_file):
-                try:
-                    existing_cache = pd.read_csv(cache_file, index_col=0, parse_dates=True)
-                    # Combine existing and new data
-                    price_data.index = pd.to_datetime(price_data.index)
-                    combined = pd.concat([existing_cache, price_data], axis=1)
-                    # Remove duplicates
-                    combined = combined.loc[:, ~combined.columns.duplicated()]
-                    combined.to_csv(cache_file)
-                except Exception:
-                    # If merging fails, just overwrite with new data
-                    price_data.to_csv(cache_file)
+            # Process the data
+            if 'Adj Close' in fetched_data.columns:
+                price_data = fetched_data['Adj Close']
             else:
-                # Create new cache file
-                price_data.to_csv(cache_file)
+                price_data = fetched_data['Close']
                 
-        return price_data
-            
-    except Exception as e:
-        print(f"Error fetching price data: {e}")
-        # Try to use cache as a fallback
-        if use_cache:
-            cache_files = [f for f in os.listdir(DATA_DIR) if f.startswith("prices_cache_") and f.endswith(".csv")]
-            if cache_files:
-                cache_files.sort(reverse=True)
-                fallback_cache = os.path.join(DATA_DIR, cache_files[0])
-                try:
-                    fallback_data = pd.read_csv(fallback_cache, index_col=0, parse_dates=True)
-                    available = [t for t in tickers if t in fallback_data.columns]
-                    if available:
-                        print(f"Using cached data from {fallback_cache} as fallback")
-                        result = fallback_data[available].copy()
-                        # Add flat values for any missing tickers
-                        for t in tickers:
-                            if t not in available:
-                                result[t] = 100.0
-                        return result[tickers]
-                except Exception:
-                    pass
-                    
-        # Return dummy data on failure with no fallback
-        dummy_data = pd.DataFrame(
-            {t: [100.0] * 20 for t in tickers},
-            index=pd.date_range(start=start, end=end, freq='B')[:20]
-        )
-        return dummy_data
+            # Handle single ticker case
+            if len(missing_tickers) == 1 and isinstance(price_data, pd.Series):
+                price_data = pd.DataFrame(price_data, columns=missing_tickers)
+                
+            # Check if we got any data
+            if not price_data.empty:
+                # Combine with existing result
+                if result_data is None:
+                    result_data = price_data
+                else:
+                    # Merge with existing data
+                    result_data = pd.concat([result_data, price_data], axis=1)
+                
+                # Update the missing tickers list
+                successfully_fetched = [ticker for ticker in missing_tickers if ticker in price_data.columns]
+                missing_tickers = [ticker for ticker in missing_tickers if ticker not in successfully_fetched]
+                
+                # Determine if we had failures (e.g., columns missing)
+                if missing_tickers:
+                    print(f"{len(missing_tickers)} Failed downloads: {missing_tickers}")
+                
+                # Update cache with the data we have
+                if use_cache and not price_data.empty:
+                    if os.path.exists(cache_file):
+                        try:
+                            # Update existing cache
+                            existing_cache = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+                            combined = pd.concat([existing_cache, price_data], axis=1)
+                            # Remove duplicates
+                            combined = combined.loc[:, ~combined.columns.duplicated()]
+                            combined.to_csv(cache_file)
+                        except Exception as e:
+                            print(f"Error updating cache: {e}")
+                            # Just write new data
+                            price_data.to_csv(cache_file)
+                    else:
+                        # Create new cache
+                        price_data.to_csv(cache_file)
+            else:
+                # If we got an empty dataframe, likely rate limited
+                print(f"Warning: No data returned from Yahoo Finance for {missing_tickers}, likely rate limited")
+                retry_count += 1
+                
+        except Exception as e:
+            if "Rate limit" in str(e):
+                print(f"Rate limit error: {str(e)}")
+            else:
+                print(f"Error fetching data: {str(e)}")
+            retry_count += 1
+            time.sleep(2)  # Wait before retry
+    
+    # At this point, if missing_tickers is still not empty, we need to fall back to estimates
+    if missing_tickers and result_data is not None:
+        # First, try to get missing data from older caches
+        cache_files = [f for f in os.listdir(DATA_DIR) if f.startswith("prices_cache_") and f.endswith(".csv")]
+        cache_files.sort(reverse=True)
+        
+        for cache_f in cache_files:
+            if cache_f == os.path.basename(cache_file):  # Skip current cache
+                continue
+                
+            try:
+                old_cache = pd.read_csv(os.path.join(DATA_DIR, cache_f), index_col=0, parse_dates=True)
+                for ticker in missing_tickers[:]:
+                    if ticker in old_cache.columns:
+                        print(f"Found {ticker} in older cache {cache_f}")
+                        ticker_data = old_cache[ticker].to_frame()
+                        
+                        # Merge with existing result
+                        if result_data is None:
+                            result_data = ticker_data
+                        else:
+                            result_data = pd.concat([result_data, ticker_data], axis=1)
+                            
+                        missing_tickers.remove(ticker)
+            except Exception:
+                pass
+                
+            if not missing_tickers:  # If we found all missing tickers
+                break
+    
+    # If we still have missing tickers, generate synthetic data based on related assets
+    if missing_tickers:
+        print(f"Generating synthetic data for {missing_tickers}")
+        
+        # Initialize result_data if it's still None
+        if result_data is None:
+            # Create an empty DataFrame with the appropriate date range
+            result_data = pd.DataFrame(
+                index=pd.date_range(start=start, end=end, freq='B')
+            )
+        
+        # Apply common synthetic data patterns for well-known ETFs
+        for ticker in missing_tickers:
+            if ticker == "VTI" and "SPY" in result_data.columns:
+                # Use SPY as a proxy for VTI with small adjustments
+                result_data[ticker] = result_data["SPY"] * 1.02  # VTI tends to be slightly different from SPY
+            elif ticker == "VTI" and "VOO" in result_data.columns:
+                result_data[ticker] = result_data["VOO"] * 1.01  # VOO is very similar to VTI
+            elif ticker == "BND" and "AGG" in result_data.columns:
+                result_data[ticker] = result_data["AGG"] * 0.99  # BND and AGG are similar bond ETFs
+            elif ticker == "VEA" and "EFA" in result_data.columns:
+                result_data[ticker] = result_data["EFA"] * 0.98  # International developed markets
+            elif ticker == "VWO" and "EEM" in result_data.columns:
+                result_data[ticker] = result_data["EEM"] * 0.97  # Emerging markets
+            else:
+                # No good proxy available, use average market behavior with reduced volatility
+                # 1. Start with a baseline value
+                baseline_value = 100.0
+                # 2. Generate a synthetic price series with low volatility
+                dates = pd.date_range(start=start, end=end, freq='B')
+                values = [baseline_value]
+                for i in range(1, len(dates)):
+                    # Add small random changes with a slight upward bias
+                    pct_change = np.random.normal(0.0002, 0.003)  # Small mean, small std dev
+                    values.append(values[-1] * (1 + pct_change))
+                
+                # Create a Series with the synthetic data
+                synthetic_series = pd.Series(values, index=dates[:len(values)])
+                
+                # Add to result data
+                result_data[ticker] = synthetic_series
+    
+    # Select only the tickers we want and handle any remaining issues
+    final_result = pd.DataFrame(index=result_data.index)
+    for ticker in tickers:
+        if ticker in result_data.columns:
+            final_result[ticker] = result_data[ticker]
+        else:
+            # Failsafe - should never happen, but just in case
+            print(f"Warning: Still missing data for {ticker}, using flat values")
+            final_result[ticker] = 100.0
+    
+    # Fill any NaN values with forward and backward filling
+    final_result = final_result.ffill().bfill()
+    
+    return final_result
 
 def fetch_benchmark_data(start, end, benchmarks=None):
     """

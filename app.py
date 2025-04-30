@@ -141,8 +141,18 @@ def main():
                 st.warning(f"Data for {', '.join(missing_tickers)} could not be fetched. Analysis will continue with available data.")
             
         except Exception as e:
-            st.error(f"Error fetching price data: {str(e)}")
-            st.info("Please try again later or use different tickers.")
+            if "Rate limit" in str(e) or "Too Many Requests" in str(e):
+                st.error("""
+                Yahoo Finance rate limit reached. The app is temporarily limited in how many data requests it can make.
+                
+                This limitation is affecting all users of the app right now. Please try:
+                - Using the cached data (uncheck "Refresh Data")
+                - Reducing the number of tickers you're analyzing
+                - Trying again in a few minutes
+                """)
+            else:
+                st.error(f"Error fetching price data: {str(e)}")
+            st.info("The app will try to continue with cached data if available.")
             return
     
     # Simulate the portfolio
