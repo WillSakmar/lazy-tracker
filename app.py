@@ -175,12 +175,33 @@ def main():
     with col1:
         # Value over time chart
         st.subheader("Portfolio Value")
+        
+        # Create a figure with multiple lines - one for total and one for each holding
         fig_value = px.line(
             perf, 
             y="total", 
-            labels={"total": "Portfolio Value ($)", "date": "Date"},
+            labels={"total": "Value ($)", "date": "Date"},
             title="Portfolio Value Over Time"
         )
+        
+        # Add a line for each individual holding
+        for ticker in weights.keys():
+            if ticker in perf.columns:
+                fig_value.add_trace(
+                    px.line(perf, y=ticker, labels={ticker: ticker}).data[0]
+                )
+        
+        # Improve the legend layout
+        fig_value.update_layout(
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
         st.plotly_chart(fig_value, use_container_width=True)
         
         # Weight deviation over time (only if rebalancing is enabled)
