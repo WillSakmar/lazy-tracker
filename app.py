@@ -211,14 +211,13 @@ def main():
             if ticker in plot_df.columns:
                 color = colors.get(ticker, None)  # Use predefined color or auto-assign
                 fig_value.add_trace(
-                    px.line(plot_df, y=ticker).data[0].update(
-                        name=ticker,
-                        line=dict(
-                            width=1.5,  # Thinner than the total
-                            color=color
-                        )
-                    )
+                    px.line(plot_df, y=ticker).data[0]
                 )
+                # Update the trace properties separately
+                fig_value.data[-1].name = ticker
+                fig_value.data[-1].line.width = 1.5
+                if color:
+                    fig_value.data[-1].line.color = color
         
         # Improve the legend and layout
         fig_value.update_layout(
