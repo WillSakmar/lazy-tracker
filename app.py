@@ -18,6 +18,14 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialize session state for data caching
+if 'prices' not in st.session_state:
+    st.session_state.prices = None
+if 'last_settings' not in st.session_state:
+    st.session_state.last_settings = {}
+if 'analysis_run' not in st.session_state:
+    st.session_state.analysis_run = False
+
 # Default portfolio settings
 DEFAULT_WEIGHTS = {"VTI": 0.6, "BND": 0.4}
 DEFAULT_INITIAL_CASH = 100_000
@@ -38,6 +46,10 @@ def main():
     set target weights, and see how a portfolio would have performed.
     """)
     
+    # Track if settings have changed to know if we need to rerun analysis
+    settings_changed = False
+    current_settings = {}
+    
     # Sidebar for settings
     with st.sidebar:
         st.title("Portfolio Settings")
@@ -52,8 +64,10 @@ def main():
                 value=datetime(2018, 1, 1).date(),  # Using more recent default start date
                 max_value=today - timedelta(days=30)
             )
+            current_settings['start'] = start
         with col2:
             end = st.date_input("End date", value=today)
+            current_settings['end'] = end
         
         # Portfolio settings
         st.header("Assets")
@@ -63,6 +77,7 @@ def main():
             "Ticker symbols (comma separated)", 
             value="VTI,BND"
         ).upper().replace(" ", "").split(",")
+        current_settings['tickers'] = ",".join(tickers)
         
         # Use fewer default weights to reduce complexity
         weights = {}
@@ -79,6 +94,7 @@ def main():
             )
             weights[ticker] = weight
             total_weight += weight
+            current_settings[f'weight_{ticker}'] = weight
         
         # Warning if weights don't sum to 1
         if abs(total_weight - 1.0) > 0.001:
@@ -93,6 +109,7 @@ def main():
             value=DEFAULT_INITIAL_CASH,
             step=10000
         )
+        current_settings['initial_cash'] = initial_cash
         
         rebalance_options = {
             "ME": "Monthly",
@@ -107,77 +124,132 @@ def main():
             format_func=lambda k: rebalance_options[k],
             index=1  # Default to quarterly
         )
+        current_settings['rebalance_period'] = rebalance_period
         
-        # Add a refresh data button
-        refresh_data = st.button("Refresh Data")
+        # Compare current and last settings to detect changes
+        if st.session_state.last_settings != current_settings:
+            settings_changed = True
+        
+        # Run Analysis button that will trigger data fetching and analysis
+        run_button = st.button("Run Analysis", type="primary")
+        
+        # Allow force refresh of data even if using cached analysis
+        refresh_data = st.checkbox("Force refresh data (may hit rate limits)", value=False)
+        current_settings['refresh_data'] = refresh_data
+        
+        # Show status of analysis
+        if st.session_state.analysis_run:
+            st.success("Analysis is up to date")
+        elif settings_changed:
+            st.info("Settings changed. Click 'Run Analysis' to update results.")
     
-    # Main section - check weights first
-    if abs(total_weight - 1.0) > 0.05:
-        st.error("Portfolio weights must sum to approximately 1.0")
+    # Only run analysis if button is pressed or this is the first run
+    run_analysis = run_button or (not st.session_state.analysis_run and not settings_changed)
+    
+    if run_analysis:
+        # Update last settings
+        st.session_state.last_settings = current_settings.copy()
+        st.session_state.analysis_run = True
+        
+        # Main section - check weights first
+        if abs(total_weight - 1.0) > 0.05:
+            st.error("Portfolio weights must sum to approximately 1.0")
+            st.session_state.prices = None
+            return
+        
+        # Get the price data
+        with st.spinner("Fetching price data..."):
+            try:
+                prices = fetch_price_data(
+                    tickers,
+                    start,
+                    end + timedelta(days=1),
+                    use_cache=not refresh_data
+                )
+                
+                # Store in session state
+                st.session_state.prices = prices
+                
+                # Check if we have enough data to proceed
+                if prices.empty:
+                    st.error("No price data available. Please check your ticker symbols and try again.")
+                    return
+                    
+                if len(prices) < 2:
+                    st.error("Insufficient price data. Need at least 2 dates for analysis.")
+                    return
+                    
+                # Display warnings for any missing tickers
+                missing_tickers = [t for t in tickers if t not in prices.columns]
+                if missing_tickers:
+                    st.warning(f"Data for {', '.join(missing_tickers)} could not be fetched. Analysis will continue with available data.")
+                
+            except Exception as e:
+                if "Rate limit" in str(e) or "Too Many Requests" in str(e):
+                    st.error("""
+                    Yahoo Finance rate limit reached. The app is temporarily limited in how many data requests it can make.
+                    
+                    This limitation is affecting all users of the app right now. Please try:
+                    - Using the cached data (uncheck "Refresh Data")
+                    - Reducing the number of tickers you're analyzing
+                    - Trying again in a few minutes
+                    """)
+                else:
+                    st.error(f"Error fetching price data: {str(e)}")
+                st.info("The app will try to continue with cached data if available.")
+                
+                # If we have previous data in session state, try to use it
+                if st.session_state.prices is not None:
+                    st.warning("Using previously fetched data for analysis. Results may not reflect your latest settings.")
+                    prices = st.session_state.prices
+                else:
+                    return
+        
+        # Simulate the portfolio
+        with st.spinner("Simulating portfolio..."):
+            try:
+                if rebalance_period == "N":
+                    # If no rebalancing, use a very long period that won't trigger
+                    rebal_period = "100Y"
+                else:
+                    rebal_period = rebalance_period
+                    
+                perf = simulate_portfolio(
+                    prices, 
+                    weights, 
+                    initial_cash=initial_cash, 
+                    rebalance_period=rebal_period
+                )
+                    
+                # Calculate portfolio returns and metrics
+                returns = calculate_returns(perf)
+                metrics = calculate_metrics(returns)
+                
+                # Store results in session state
+                st.session_state.perf = perf
+                st.session_state.returns = returns
+                st.session_state.metrics = metrics
+                
+            except Exception as e:
+                st.error(f"Error in portfolio simulation: {str(e)}")
+                st.info("Please try adjusting your settings or using different tickers.")
+                return
+    elif settings_changed:
+        # If settings changed but analysis not run, show message
+        st.warning("Settings have changed. Click 'Run Analysis' in the sidebar to update results.")
+        # Don't show any results if we're waiting for the user to run analysis
+        if not st.session_state.analysis_run:
+            return
+    
+    # If we have analysis results in session state, display them
+    if hasattr(st.session_state, 'perf') and st.session_state.perf is not None:
+        perf = st.session_state.perf
+        returns = st.session_state.returns
+        metrics = st.session_state.metrics
+    else:
+        # No results to display
+        st.info("Click 'Run Analysis' in the sidebar to start the simulation.")
         return
-    
-    # Get the price data
-    with st.spinner("Fetching price data..."):
-        try:
-            prices = fetch_price_data(
-                tickers,
-                start,
-                end + timedelta(days=1),
-                use_cache=not refresh_data
-            )
-            
-            # Check if we have enough data to proceed
-            if prices.empty:
-                st.error("No price data available. Please check your ticker symbols and try again.")
-                return
-                
-            if len(prices) < 2:
-                st.error("Insufficient price data. Need at least 2 dates for analysis.")
-                return
-                
-            # Display warnings for any missing tickers
-            missing_tickers = [t for t in tickers if t not in prices.columns]
-            if missing_tickers:
-                st.warning(f"Data for {', '.join(missing_tickers)} could not be fetched. Analysis will continue with available data.")
-            
-        except Exception as e:
-            if "Rate limit" in str(e) or "Too Many Requests" in str(e):
-                st.error("""
-                Yahoo Finance rate limit reached. The app is temporarily limited in how many data requests it can make.
-                
-                This limitation is affecting all users of the app right now. Please try:
-                - Using the cached data (uncheck "Refresh Data")
-                - Reducing the number of tickers you're analyzing
-                - Trying again in a few minutes
-                """)
-            else:
-                st.error(f"Error fetching price data: {str(e)}")
-            st.info("The app will try to continue with cached data if available.")
-            return
-    
-    # Simulate the portfolio
-    with st.spinner("Simulating portfolio..."):
-        try:
-            if rebalance_period == "N":
-                # If no rebalancing, use a very long period that won't trigger
-                rebal_period = "100Y"
-            else:
-                rebal_period = rebalance_period
-                
-            perf = simulate_portfolio(
-                prices, 
-                weights, 
-                initial_cash=initial_cash, 
-                rebalance_period=rebal_period
-            )
-                
-            # Calculate portfolio returns and metrics
-            returns = calculate_returns(perf)
-            metrics = calculate_metrics(returns)
-        except Exception as e:
-            st.error(f"Error in portfolio simulation: {str(e)}")
-            st.info("Please try adjusting your settings or using different tickers.")
-            return
     
     # Dashboard layout
     col1, col2 = st.columns([2, 1])
@@ -311,8 +383,8 @@ def main():
             use_container_width=True,
             hide_index=True
         )
-        
-        # Current allocation
+
+    # Current allocation
         st.subheader("Current Allocation")
         
         # Calculate current weights
@@ -366,7 +438,7 @@ def main():
         pivot_formatted,
         use_container_width=True
     )
-    
+
     # Download data (simplify to just one button)
     st.subheader("Export Data")
     csv_perf = perf.to_csv().encode("utf-8")
