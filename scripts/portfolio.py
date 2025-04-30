@@ -115,12 +115,15 @@ def calculate_metrics(returns):
     downside_dev = neg_returns.std() * np.sqrt(252) if len(neg_returns) > 0 else 0
     sortino = ann_return / downside_dev if downside_dev > 0 else 0
     
-    # Value at Risk (95%) - add error handling
+    # Value at Risk (95%) - add error handling and warning suppression
+    var_95 = 0
     try:
-        var_95 = stats.norm.ppf(0.05, daily_returns.mean(), daily_returns.std())
-        # Check if value is valid
-        if np.isnan(var_95) or np.isinf(var_95):
-            var_95 = -0.02  # Default fallback value
+        # Use numpy.errstate to suppress warnings
+        with np.errstate(all='ignore'):
+            var_95 = stats.norm.ppf(0.05, daily_returns.mean(), daily_returns.std())
+            # Check if value is valid
+            if np.isnan(var_95) or np.isinf(var_95):
+                var_95 = -0.02  # Default fallback value
     except Exception:
         # Fallback to a reasonable default VaR value
         var_95 = -0.02
@@ -132,7 +135,7 @@ def calculate_metrics(returns):
         'sortino_ratio': sortino,
         'max_drawdown': max_dd,
         'var_95': var_95,
-        'total_return': (1 + daily_returns).cumprod().iloc[-1] - 1
+        'total_return': (1 + daily_returns).cumprod().iloc[-1] - 1 if len(daily_returns) > 0 else 0
     }
 
 def compare_to_benchmark(portfolio_returns, benchmark_returns):
