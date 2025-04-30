@@ -1,90 +1,66 @@
-# Portfolio Dashboard
+# Lazy Portfolio Tracker
 
-An interactive Streamlit app for monitoring and analyzing a diversified investment portfolio with customizable asset allocation and rebalancing strategies.
+A lightweight Streamlit application for tracking and backtesting simple portfolio allocations.
 
 ## Features
 
-- **Data Fetching**: Retrieves historical price data for any stock or ETF using Yahoo Finance API
-- **Portfolio Simulation**: Simulates portfolio growth with periodic rebalancing to maintain target asset weights
-- **Performance Metrics**: Calculates key metrics like returns, volatility, Sharpe ratio, max drawdown, etc.
-- **Benchmark Comparison**: Compares portfolio performance against major indices like S&P 500
-- **Asset Allocation Visualization**: Shows current vs target allocation with weight deviation tracking
-- **Monthly Returns Analysis**: Displays monthly returns in a heatmap table format
-- **Data Export**: Export performance and returns data as CSV files for further analysis
+- Backtest a portfolio of assets with custom allocation weights
+- Automatic rebalancing at monthly, quarterly, or annual intervals
+- Performance metrics calculation (returns, volatility, Sharpe ratio, etc.)
+- Interactive charts for portfolio value and allocation tracking
+- Monthly returns table
+- Simple data exports
 
-## Setup
+## Installation
 
 ```bash
-git clone https://github.com/willsakmar/lazy-tracker.git
+# Clone the repository
+git clone https://github.com/WillSakmar/lazy-tracker.git
 cd lazy-tracker
-python3 -m venv venv
-source venv/bin/activate       # Windows: venv\Scripts\activate
+
+# Create a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-Run the app:
+Run the Streamlit app locally:
 
 ```bash
 streamlit run app.py
 ```
 
-Then open your browser to http://localhost:8501
+Or deploy to Streamlit Cloud:
 
-## Portfolio Configuration
+1. Push your repository to GitHub
+2. Log in to [Streamlit Cloud](https://streamlit.io/cloud)
+3. Create a new app pointing to your repository and app.py file
 
-- **Assets**: Enter ticker symbols for your desired portfolio assets
-- **Weights**: Adjust allocation percentages for each asset
-- **Initial Investment**: Set starting cash amount
-- **Rebalance Frequency**: Choose monthly, quarterly, annual, or no rebalancing
-- **Date Range**: Select historical period for analysis
-- **Benchmarks**: Compare your portfolio against market indices
+## Configuration
 
-## Data Caching
+In the app, you can configure:
 
-The app caches fetched price data to improve performance and reduce API calls. To use fresh data, click the "Refresh Data" button in the sidebar.
+- Start and end dates for the backtest
+- Asset ticker symbols (e.g., VTI, BND)
+- Target allocation weights for each asset
+- Initial investment amount
+- Rebalancing frequency
 
-## GitHub Pages Deployment
+## Project Structure
 
-You can deploy this dashboard to GitHub Pages in two ways:
-
-### Option 1: Static Site (included in this repo)
-
-Deploy a static version of the dashboard that shows pre-generated portfolio data:
-
-1. Enable GitHub Pages in your repository settings (Settings → Pages)
-2. Set the source to the `docs` folder on the `main` branch
-3. Run the update script to generate fresh portfolio data:
-
-```bash
-./update_gh_pages.sh
-```
-
-This will:
-- Generate portfolio data JSON files based on default settings
-- Commit and push the changes to your GitHub repository
-- Update your GitHub Pages site
-
-The dashboard will be available at `https://yourusername.github.io/your-repo-name/`
-
-### Option 2: Streamlit Cloud (Interactive)
-
-For a fully interactive version:
-
-1. Deploy the app to Streamlit Community Cloud (https://share.streamlit.io/)
-2. Update the Streamlit URL in `docs/streamlit.html`
-3. Visitors to your GitHub Pages site can click "Open Interactive Dashboard" to access the full Streamlit app
-
-## Development
-
-The project structure:
 - `app.py` - Main Streamlit application
-- `scripts/fetch_data.py` - Data retrieval module using yfinance
-- `scripts/portfolio.py` - Portfolio simulation and analysis logic
-- `data/` - Directory for cached price data
-- `docs/` - Static website for GitHub Pages deployment
+- `scripts/fetch_data.py` - Functions for fetching price data from Yahoo Finance
+- `scripts/portfolio.py` - Portfolio simulation and metrics calculation
+- `data/` - Cache directory for financial data (created automatically)
 
-## Disclaimer
+## Data Sources
 
-This application is for educational purposes only and does not constitute investment advice. Past performance is not indicative of future results.
+This tool uses Yahoo Finance (via the yfinance library) to fetch historical price data.
+
+## Cache Management
+
+The application uses cached data to minimize API calls to Yahoo Finance. The cache is stored in the `data/` directory and refreshed weekly.
