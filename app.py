@@ -34,8 +34,8 @@ def main():
     # App title and description
     st.title("Lazy Portfolio Tracker")
     st.markdown("""
-    A lightweight tool to backtest simple portfolio allocations. Enter your assets, 
-    set target weights, and see how your portfolio would have performed.
+    A lightweight tool to backtest simple portfolio allocations. Enter assets, 
+    set target weights, and see how a portfolio would have performed.
     """)
     
     # Sidebar for settings
@@ -221,29 +221,17 @@ def main():
         
         # Improve the legend and layout
         fig_value.update_layout(
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            xaxis=dict(
-                title=dict(
-                    text="Date",
-                    font=dict(size=12)
-                ),
-                showgrid=True,
-                gridcolor='rgba(230, 230, 230, 0.5)'
-            ),
-            yaxis=dict(
-                title=dict(
-                    text="Value ($)",
-                    font=dict(size=12)
-                ),
-                showgrid=True,
-                gridcolor='rgba(230, 230, 230, 0.5)'
-            ),
+            legend_orientation="h",
+            legend_y=1.02,
+            legend_x=1,
+            legend_xanchor="right",
+            legend_yanchor="bottom",
+            xaxis_title="Date",
+            xaxis_showgrid=True,
+            xaxis_gridcolor='rgba(230, 230, 230, 0.5)',
+            yaxis_title="Value ($)",
+            yaxis_showgrid=True,
+            yaxis_gridcolor='rgba(230, 230, 230, 0.5)',
             plot_bgcolor='white',
             hovermode='x unified'
         )
@@ -349,7 +337,7 @@ def main():
     st.subheader("Export Data")
     csv_perf = perf.to_csv().encode("utf-8")
     st.download_button(
-        label="📥 Download Portfolio Performance CSV",
+        label="Download Portfolio Performance CSV",
         data=csv_perf,
         file_name=f"portfolio_performance_{start.strftime('%Y%m%d')}_to_{end.strftime('%Y%m%d')}.csv",
         mime="text/csv"
